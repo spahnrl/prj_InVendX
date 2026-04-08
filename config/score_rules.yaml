@@ -1,0 +1,45 @@
+ruleset_version: "0.1.0"
+rules:
+  - id: keyword_signal_present
+    category: TradingDataDepth
+    points: 1
+    max_citations: 5
+    match:
+      evidence_type_in: ["keyword_signal"]
+
+  - id: integration_language
+    category: IntegrationCapability
+    points: 2
+    max_citations: 5
+    match:
+      evidence_type_in: ["integration"]
+
+  - id: dev_portal_link
+    category: DeveloperExperience
+    points: 1
+    max_citations: 5
+    match:
+      evidence_type_in: ["dev_portal_signal"]
+
+  - id: github_repo
+    category: DeveloperExperience
+    points: 1
+    max_citations: 8
+    match:
+      evidence_type_in: ["repo_metadata"]
+
+  - id: hiring_tech_keywords
+    category: EngineeringSignal
+    points: 1
+    max_citations: 5
+    match:
+      evidence_type_in: ["hiring_signal"]
+      tag_contains: "api"
+
+  - id: dev_docs_absence
+    category: DeveloperExperience
+    points: -1
+    max_citations: 2
+    match:
+      evidence_type_in: ["absence_signal"]
+      tag_contains: "developer_docs"

@@ -1,0 +1,35 @@
+vendors:
+  - canonical_name: "Charles River"
+    primary_domain: "crd.com"
+    primary_segment: "Institutional / OEMS / IBOR"
+    aliases:
+      - "Charles River Development"
+      - "CRD"
+    seed_urls:
+      press:
+        - "https://www.crd.com/newsroom/"
+      careers:
+        - "https://www.crd.com/careers/"
+    github_org: null
+
+  - canonical_name: "InvestCloud"
+    primary_domain: "investcloud.com"
+    primary_segment: "Enterprise / RIA / digital wealth"
+    aliases: []
+    seed_urls: {}
+    github_org: null
+
+  - canonical_name: "Addepar"
+    primary_domain: "addepar.com"
+    primary_segment: "Reporting / aggregation"
+    aliases: []
+    seed_urls: {}
+    github_org: null
+
+  - canonical_name: "Orion Advisor Tech"
+    primary_domain: "orion.com"
+    primary_segment: "RIA / advisor tech"
+    aliases:
+      - "Orion"
+    seed_urls: {}
+    github_org: null
