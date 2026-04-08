@@ -32,9 +32,33 @@ The CLI supports vendor sync, robots-aware bounded crawl, evidence ingestion to 
 
 ---
 
+## Checkpoint: Two-tab Streamlit — Vendor Intelligence + Admin/Operator
+
+**Date:** 2026-04-08
+
+### Summary
+
+The Streamlit app is split into **Vendor Intelligence** (analyst-first) and **Admin / Operator** (CLI parity). The analyst tab shows a read-only portfolio joins `vendors` with `vendor_summaries` (same shape as `export_summaries_json`), search, CSV export of raw rows, per-vendor markdown report preview + download, and an “At a glance” summary derived from the existing report text. The admin tab keeps paths in the sidebar, sync, ingest, scoring options, exports, operation log, and latest score line items. Layout/CSS polish and a **favicon column** (Google favicon URL from `primary_domain`, browser-loaded; placeholder if no domain) are presentation-only—no new SQLite tables or ingestion behavior.
+
+### Completed in this checkpoint
+
+- `st.tabs`: **Vendor Intelligence** (default) and **Admin / Operator**
+- Portfolio table: search, export CSV, pandas + `column_config`, row height tuning, human-readable column labels
+- Report: in-process `report_builder.export_vendor_markdown`, expander for full markdown, download `.md`
+- “At a glance” card: footprint line + shortened labels from the same generated report (display-only trimming)
+- Global layout CSS: narrower sidebar, capped main width for readability
+- **Icon column:** favicon URLs from `primary_domain` (optional network); no `logo_url` in schema
+- `ui` optional extra remains `streamlit>=1.30`; `operator_app.py` uses `pandas` (pulled in with Streamlit)
+
+### Scope notes
+
+- Deferred from earlier UI plan (still optional): portfolio **latest score** column via join; **source pills** from evidence aggregation; curated **brand logos** per vendor (would need config/DB field)
+
+---
+
 ## Current status (paste for README or notes)
 
-**InVendX (April 2026 checkpoint):** The project delivers a working **MVP CLI pipeline**—vendor YAML sync, bounded web crawl, structured evidence in SQLite, **rules-based scoring** (latest run by default, optional `--all-evidence`), and **exports** (including scorecard). **Regression and scoring-scope tests** cover key heuristics. A **first Streamlit operator UI** wraps the same `invendx` CLI (optional `pip install -e ".[ui]"`). This checkpoint reflects **implemented** behavior suitable for a portfolio demo, not a full product or hosted automation story.
+**InVendX (April 2026):** **MVP CLI pipeline**—vendor YAML sync, bounded crawl, evidence in SQLite, **rules-based scoring** (latest ingest run by default, `--all-evidence` when needed), **exports** (evidence, report, scorecard, summaries JSON). Tests cover extraction/scoring heuristics and scoring scope. **Streamlit** optional extra **`.[ui]`**: two-tab **`operator_app.py`** — **Vendor Intelligence** (portfolio + reports) and **Admin / Operator** (same `invendx` CLI as subprocess). Suitable for a portfolio demo; not a hosted production operator story.
 
 ---
 
