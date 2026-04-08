@@ -125,7 +125,7 @@ Web UI, chatbot, relationship graph — future
 
 ## ⚙️ Scoring (explainable)
 
-Scoring is **YAML-driven** (`config/score_rules.yaml`). Rules match evidence fields (e.g. evidence type, tags) and attach points to scorecard categories. The README examples below are **illustrative**; the live rules file is the source of truth.
+Scoring is **YAML-driven** (`config/score_rules.yaml`). Rules match evidence fields (e.g. evidence type, tags) and attach points to scorecard categories. **By default**, `invendx score` and `run --score` only use evidence from the **latest ingest `run_id`** for that vendor. Use **`--all-evidence`** on those commands to include every stored evidence row. The README examples below are **illustrative**; the live rules file is the source of truth.
 
 | Signal (illustrative) | Impact (example) |
 | --------------------- | ---------------- |
@@ -167,16 +167,18 @@ invendx discover "Charles River" --db data/invendx.db
 invendx discover "Charles River" --db data/invendx.db --json
 invendx run "Charles River" --db data/invendx.db
 invendx run "Charles River" --db data/invendx.db --score
+invendx run "Charles River" --db data/invendx.db --score --all-evidence
 # optional crawl tuning (defaults: max-pages 40, max-depth 2, delay 0.75s):
 invendx run "Charles River" --db data/invendx.db --max-pages 20 --max-depth 1 --delay 1.0
 invendx score "Charles River" --db data/invendx.db --rules config/score_rules.yaml
+invendx score "Charles River" --db data/invendx.db --rules config/score_rules.yaml --all-evidence
 invendx export evidence --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export report --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export scorecard --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export summaries --db data/invendx.db --out exports/
 ```
 
-`--score` on `run` uses the same scoring path as `invendx score` (after ingest). `export scorecard` writes the **latest** score run’s line items to CSV; `export report` also includes a **Latest scorecard** section when a run exists.
+`--score` on `run` uses the same scoring path as `invendx score` (after ingest), including **`--all-evidence`**. `export scorecard` and the score section in `export report` always reflect the **most recent persisted score run** in the database (whatever scope was used on that last `score` / `run --score`). They do not re-score; re-run `invendx score` if you change ingest data or want a different scope. **`export evidence`** and the **Recent evidence** part of the report still list all stored rows for the vendor.
 
 **GitHub API:** if you set `github_org` on a vendor, provide a GitHub **personal access token** as `GITHUB_TOKEN`. You can put it in a repo-root `.env` file (gitignored); the CLI loads it automatically via `python-dotenv`. Environment variables already set are not overwritten. The repository link at the top is not a token.
 
@@ -195,7 +197,7 @@ invendx export summaries --db data/invendx.db --out exports/
 * Source discovery + bounded same-domain crawler (with robots check)
 * Evidence extraction from crawled HTML (keywords, integration language, doc links), careers pages, optional GitHub org repos
 * **`vendor_summaries`** refresh (counts, confidence rollup, light profile hints from text)
-* Rules-based scoring (standalone or `run --score`) and CSV / Markdown / JSON summary exports, plus **scorecard** CSV for the latest score run
+* Rules-based scoring (standalone or `run --score`; default scope = latest ingest run, opt-in `--all-evidence`) and CSV / Markdown / JSON summary exports, plus **scorecard** CSV and report section for the **latest persisted** score run
 * **`vendor_graph`:** stub only (no graph persistence)
 
 ---

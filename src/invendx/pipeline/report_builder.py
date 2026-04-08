@@ -58,6 +58,8 @@ def export_vendor_markdown(conn: sqlite3.Connection, vendor_id: str, out_path: P
             [
                 "## Latest scorecard",
                 "",
+                "Reflects the most recent `invendx score` or `run --score` (default input: **latest ingest run** only; use `--all-evidence` on those commands to score everything).",
+                "",
                 f"- **Score run**: `{run_meta['score_run_id']}`",
                 f"- **Ruleset**: {run_meta.get('ruleset_version')}",
                 f"- **Created**: {run_meta.get('created_at')}",

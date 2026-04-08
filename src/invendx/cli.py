@@ -36,10 +36,28 @@ vendors_app = typer.Typer(no_args_is_help=True)
 app.add_typer(vendors_app, name="vendors")
 
 
-def _execute_score(conn: sqlite3.Connection, vendor: VendorRecord, rules: Path) -> tuple[str, int, str]:
-    """Load rules, evaluate against all evidence for vendor, persist score run."""
+def _execute_score(
+    conn: sqlite3.Connection,
+    vendor: VendorRecord,
+    rules: Path,
+    *,
+    all_evidence: bool = False,
+    ingest_run_id: str | None = None,
+) -> tuple[str, int, str]:
+    """Load rules, evaluate evidence for vendor, persist score run.
+
+    By default uses evidence for the latest ingest ``run_id`` only (or ``ingest_run_id`` when set).
+    Pass ``all_evidence=True`` to score across all stored evidence for the vendor.
+    """
     cfg = load_score_rules(rules)
-    ev = evidence_repo.list_evidence_for_vendor(conn, vendor.vendor_id)
+    if all_evidence:
+        ev = evidence_repo.list_evidence_for_vendor(conn, vendor.vendor_id)
+    else:
+        rid = ingest_run_id or evidence_repo.get_latest_run_id_for_vendor(conn, vendor.vendor_id)
+        if rid is None:
+            ev = []
+        else:
+            ev = evidence_repo.list_evidence_for_vendor(conn, vendor.vendor_id, run_id=rid)
     items = evaluate_rules(cfg, ev)
     score_run_id = score_repo.insert_score_run(
         conn, vendor.vendor_id, vendor.canonical_name, cfg.ruleset_version, items
@@ -95,6 +113,11 @@ def run(
     max_pages: int | None = typer.Option(None, "--max-pages", help="Max pages to fetch (default: 40)"),
     max_depth: int | None = typer.Option(None, "--max-depth", help="Max link depth from seeds (default: 2)"),
     delay_s: float | None = typer.Option(None, "--delay", help="Seconds between requests (default: 0.75)"),
+    all_evidence: bool = typer.Option(
+        False,
+        "--all-evidence",
+        help="With --score: include all vendor evidence (default: latest ingest run only)",
+    ),
 ) -> None:
     setup_logging()
     log = logging.getLogger("invendx.run")
@@ -140,7 +163,13 @@ def run(
     refresh_vendor_summary(conn, v.vendor_id)
     typer.echo(f"Run {run_id}: stored {len(records)} evidence rows for {vendor}")
     if score:
-        score_run_id, n_items, rver = _execute_score(conn, v, rules)
+        score_run_id, n_items, rver = _execute_score(
+            conn,
+            v,
+            rules,
+            all_evidence=all_evidence,
+            ingest_run_id=run_id,
+        )
         typer.echo(f"Score run {score_run_id}: {n_items} line items ({rver})")
 
 
@@ -149,6 +178,11 @@ def score(
     vendor: str = typer.Argument(...),
     db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
     rules: Path = typer.Option(Path("config/score_rules.yaml"), "--rules", "-r"),
+    all_evidence: bool = typer.Option(
+        False,
+        "--all-evidence",
+        help="Score using all vendor evidence (default: latest ingest run only)",
+    ),
 ) -> None:
     setup_logging()
     conn = connect(db)
@@ -157,7 +191,7 @@ def score(
     if not v:
         typer.echo(f"Vendor not in DB: {vendor}", err=True)
         raise typer.Exit(1)
-    score_run_id, n_items, rver = _execute_score(conn, v, rules)
+    score_run_id, n_items, rver = _execute_score(conn, v, rules, all_evidence=all_evidence)
     typer.echo(f"Scored {vendor}: {n_items} line items ({rver}) (run {score_run_id})")
 
 

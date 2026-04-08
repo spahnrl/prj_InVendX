@@ -70,12 +70,39 @@ def insert_evidence(conn: sqlite3.Connection, records: list[EvidenceRecord]) -> 
     conn.commit()
 
 
-def list_evidence_for_vendor(conn: sqlite3.Connection, vendor_id: str) -> list[EvidenceRecord]:
+def get_latest_run_id_for_vendor(conn: sqlite3.Connection, vendor_id: str) -> str | None:
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM evidence WHERE vendor_id = ? ORDER BY collected_at",
+        """
+        SELECT run_id FROM runs
+        WHERE vendor_id = ?
+        ORDER BY started_at DESC, run_id DESC
+        LIMIT 1
+        """,
         (vendor_id,),
     )
+    row = cur.fetchone()
+    return str(row[0]) if row else None
+
+
+def list_evidence_for_vendor(
+    conn: sqlite3.Connection, vendor_id: str, *, run_id: str | None = None
+) -> list[EvidenceRecord]:
+    cur = conn.cursor()
+    if run_id is None:
+        cur.execute(
+            "SELECT * FROM evidence WHERE vendor_id = ? ORDER BY collected_at",
+            (vendor_id,),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT * FROM evidence
+            WHERE vendor_id = ? AND run_id = ?
+            ORDER BY collected_at
+            """,
+            (vendor_id, run_id),
+        )
     return [_row_to_model(dict(r)) for r in cur.fetchall()]
 
 
