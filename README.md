@@ -159,16 +159,24 @@ Run commands from the **repository root** so paths like `config/` resolve.
 
 ## ▶️ CLI (current)
 
+**Vendor argument:** For `discover`, `run`, and `score`, the vendor name is the **first positional** argument (not `--vendor`). For `export`, the first positional is **what** to export (`evidence`, `report`, `scorecard`, `summaries`); the vendor is **`--vendor` / `-v`** (required except for `summaries`).
+
 ```bash
 invendx vendors sync --config config/vendors.yaml --db data/invendx.db
-invendx discover --vendor "Charles River" --db data/invendx.db
-invendx discover --vendor "Charles River" --db data/invendx.db --json
-invendx run --vendor "Charles River" --db data/invendx.db
-invendx score --vendor "Charles River" --db data/invendx.db --rules config/score_rules.yaml
+invendx discover "Charles River" --db data/invendx.db
+invendx discover "Charles River" --db data/invendx.db --json
+invendx run "Charles River" --db data/invendx.db
+invendx run "Charles River" --db data/invendx.db --score
+# optional crawl tuning (defaults: max-pages 40, max-depth 2, delay 0.75s):
+invendx run "Charles River" --db data/invendx.db --max-pages 20 --max-depth 1 --delay 1.0
+invendx score "Charles River" --db data/invendx.db --rules config/score_rules.yaml
 invendx export evidence --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export report --vendor "Charles River" --db data/invendx.db --out exports/
+invendx export scorecard --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export summaries --db data/invendx.db --out exports/
 ```
+
+`--score` on `run` uses the same scoring path as `invendx score` (after ingest). `export scorecard` writes the **latest** score run’s line items to CSV; `export report` also includes a **Latest scorecard** section when a run exists.
 
 **GitHub API:** if you set `github_org` on a vendor, provide a GitHub **personal access token** as `GITHUB_TOKEN`. You can put it in a repo-root `.env` file (gitignored); the CLI loads it automatically via `python-dotenv`. Environment variables already set are not overwritten. The repository link at the top is not a token.
 
@@ -187,7 +195,7 @@ invendx export summaries --db data/invendx.db --out exports/
 * Source discovery + bounded same-domain crawler (with robots check)
 * Evidence extraction from crawled HTML (keywords, integration language, doc links), careers pages, optional GitHub org repos
 * **`vendor_summaries`** refresh (counts, confidence rollup, light profile hints from text)
-* Rules-based scoring and CSV / Markdown / JSON summary exports
+* Rules-based scoring (standalone or `run --score`) and CSV / Markdown / JSON summary exports, plus **scorecard** CSV for the latest score run
 * **`vendor_graph`:** stub only (no graph persistence)
 
 ---

@@ -47,3 +47,32 @@ def insert_score_run(
         )
     conn.commit()
     return score_run_id
+
+
+def get_latest_score_run(conn: sqlite3.Connection, vendor_id: str) -> dict | None:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM score_runs
+        WHERE vendor_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (vendor_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def list_line_items_for_run(conn: sqlite3.Connection, score_run_id: str) -> list[dict]:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT line_id, category, rule_id, points, rationale, evidence_ids_json
+        FROM score_line_items
+        WHERE score_run_id = ?
+        ORDER BY category, rule_id
+        """,
+        (score_run_id,),
+    )
+    return [dict(r) for r in cur.fetchall()]

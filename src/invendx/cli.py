@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import typer
@@ -19,18 +21,30 @@ from invendx.pipeline.github_collector import collect_github_org
 from invendx.pipeline.job_collector import collect_job_signals
 from invendx.pipeline.press_parser import dev_docs_absence_evidence, parse_pages_to_evidence
 from invendx.pipeline.score_engine import evaluate_rules
-from invendx.pipeline.site_crawler import SiteCrawler
+from invendx.pipeline.site_crawler import CrawlConfig, SiteCrawler
 from invendx.pipeline.source_discovery import discover_vendor
 from invendx.pipeline.vendor_summary import refresh_vendor_summary
 from invendx.extract.patterns import load_keywords
 from invendx.pipeline.entity_normalizer import EntityNormalizer
 from invendx.pipeline import report_builder
+from invendx.models.vendor import VendorRecord
 from invendx.storage.db import connect, init_schema
 from invendx.storage import evidence_repo, score_repo, vendor_repo
 
 app = typer.Typer(no_args_is_help=True)
 vendors_app = typer.Typer(no_args_is_help=True)
 app.add_typer(vendors_app, name="vendors")
+
+
+def _execute_score(conn: sqlite3.Connection, vendor: VendorRecord, rules: Path) -> tuple[str, int, str]:
+    """Load rules, evaluate against all evidence for vendor, persist score run."""
+    cfg = load_score_rules(rules)
+    ev = evidence_repo.list_evidence_for_vendor(conn, vendor.vendor_id)
+    items = evaluate_rules(cfg, ev)
+    score_run_id = score_repo.insert_score_run(
+        conn, vendor.vendor_id, vendor.canonical_name, cfg.ruleset_version, items
+    )
+    return score_run_id, len(items), cfg.ruleset_version
 
 
 @vendors_app.command("sync")
@@ -76,6 +90,11 @@ def run(
     db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
     keywords: Path = typer.Option(Path("config/keywords.yaml"), "--keywords", "-k"),
     aliases: Path = typer.Option(Path("config/aliases.yaml"), "--aliases", "-a"),
+    score: bool = typer.Option(False, "--score", help="Run rule-based scoring after ingest"),
+    rules: Path = typer.Option(Path("config/score_rules.yaml"), "--rules", "-r"),
+    max_pages: int | None = typer.Option(None, "--max-pages", help="Max pages to fetch (default: 40)"),
+    max_depth: int | None = typer.Option(None, "--max-depth", help="Max link depth from seeds (default: 2)"),
+    delay_s: float | None = typer.Option(None, "--delay", help="Seconds between requests (default: 0.75)"),
 ) -> None:
     setup_logging()
     log = logging.getLogger("invendx.run")
@@ -94,7 +113,14 @@ def run(
     http = HttpClient()
     robots = RobotsPolicy(DEFAULT_UA)
     targets = discover_vendor(v, http=http)
-    crawler = SiteCrawler(http, robots)
+    crawl_config = CrawlConfig()
+    if max_pages is not None:
+        crawl_config = replace(crawl_config, max_pages=max_pages)
+    if max_depth is not None:
+        crawl_config = replace(crawl_config, max_depth=max_depth)
+    if delay_s is not None:
+        crawl_config = replace(crawl_config, delay_s=delay_s)
+    crawler = SiteCrawler(http, robots, crawl_config)
     pages = crawler.crawl_from_targets(targets)
     records = parse_pages_to_evidence(pages, v, run_id, PARSER_VERSION)
 
@@ -113,6 +139,9 @@ def run(
     evidence_repo.insert_evidence(conn, records)
     refresh_vendor_summary(conn, v.vendor_id)
     typer.echo(f"Run {run_id}: stored {len(records)} evidence rows for {vendor}")
+    if score:
+        score_run_id, n_items, rver = _execute_score(conn, v, rules)
+        typer.echo(f"Score run {score_run_id}: {n_items} line items ({rver})")
 
 
 @app.command()
@@ -128,16 +157,13 @@ def score(
     if not v:
         typer.echo(f"Vendor not in DB: {vendor}", err=True)
         raise typer.Exit(1)
-    cfg = load_score_rules(rules)
-    ev = evidence_repo.list_evidence_for_vendor(conn, v.vendor_id)
-    items = evaluate_rules(cfg, ev)
-    score_repo.insert_score_run(conn, v.vendor_id, v.canonical_name, cfg.ruleset_version, items)
-    typer.echo(f"Scored {vendor}: {len(items)} line items ({cfg.ruleset_version})")
+    score_run_id, n_items, rver = _execute_score(conn, v, rules)
+    typer.echo(f"Scored {vendor}: {n_items} line items ({rver}) (run {score_run_id})")
 
 
 @app.command("export")
 def export_cmd(
-    what: str = typer.Argument(..., help="evidence | report | summaries"),
+    what: str = typer.Argument(..., help="evidence | report | scorecard | summaries"),
     vendor: str | None = typer.Option(None, "--vendor", "-v"),
     db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
     out: Path = typer.Option(Path("exports"), "--out", "-o"),
@@ -150,7 +176,7 @@ def export_cmd(
         typer.echo(str(path))
         return
     if not vendor:
-        typer.echo("--vendor required for evidence/report", err=True)
+        typer.echo("--vendor required for evidence, report, or scorecard", err=True)
         raise typer.Exit(1)
     v = vendor_repo.find_vendor_by_canonical_name(conn, vendor)
     if not v:
@@ -160,8 +186,10 @@ def export_cmd(
         path = report_builder.export_evidence_csv(conn, v.vendor_id, out / f"{vendor}_evidence.csv")
     elif what == "report":
         path = report_builder.export_vendor_markdown(conn, v.vendor_id, out / f"{vendor}_report.md")
+    elif what == "scorecard":
+        path = report_builder.export_scorecard_csv(conn, v.vendor_id, out / f"{vendor}_scorecard.csv")
     else:
-        typer.echo("what must be evidence, report, or summaries", err=True)
+        typer.echo("what must be evidence, report, scorecard, or summaries", err=True)
         raise typer.Exit(1)
     typer.echo(str(path))
 
