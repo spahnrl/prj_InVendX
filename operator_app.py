@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -47,12 +48,32 @@ PAGE_TITLE = "InVendX"
 DEMO_DB_RELATIVE = Path("demo_data") / "invendx_demo.db"
 
 
-def _hydrate_demo_db_if_missing(db_path: Path, repo_root: Path) -> bool:
-    """Copy the committed demo DB into the active DB path when deployed without local data."""
-    if db_path.exists():
-        return False
+def _demo_evidence_count(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            return int(conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0
+
+
+def _hydrate_demo_db_if_needed(
+    db_path: Path,
+    repo_root: Path,
+    *,
+    replace_underfilled: bool = False,
+) -> bool:
+    """Copy the committed demo DB into the active DB path when deployed without usable data."""
     demo_db = repo_root / DEMO_DB_RELATIVE
     if not demo_db.exists():
+        return False
+    if db_path.exists() and not replace_underfilled:
+        return False
+    if db_path.exists() and _demo_evidence_count(db_path) >= 100:
         return False
     try:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1864,7 +1885,11 @@ def main() -> None:
         db_path = Path(st.text_input("Database file", value=db_default, key="path_db"))
         vendors_yaml = Path(st.text_input("Vendors config (YAML)", value=cfg_default, key="path_cfg"))
         exports_dir = Path(st.text_input("Exports folder", value=exp_default, key="path_exports"))
-        if _hydrate_demo_db_if_missing(db_path, repo_root):
+        if _hydrate_demo_db_if_needed(
+            db_path,
+            repo_root,
+            replace_underfilled=str(db_path) == db_default,
+        ):
             st.success("Loaded bundled demo database for this session.")
         with st.expander("Glossary"):
             st.markdown(
