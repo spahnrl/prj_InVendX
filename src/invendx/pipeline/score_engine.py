@@ -35,6 +35,7 @@ def evaluate_rules(
     cfg: ScoreRulesConfig,
     evidence: list[EvidenceRecord],
 ) -> list[ScoreLineItem]:
+    """Evaluate rules over ``evidence``. Callers may pre-filter duplicates (see CLI ``dedupe_evidence_for_scoring``)."""
     items: list[ScoreLineItem] = []
     for rule in cfg.rules:
         matched = [e for e in evidence if _match_evidence(rule, e)]

@@ -11,7 +11,7 @@ from invendx.models.vendor import VendorSeed
 from invendx.pipeline import report_builder
 from invendx.pipeline.score_engine import evaluate_rules
 from invendx.storage.db import connect, init_schema
-from invendx.storage import evidence_repo, score_repo, vendor_repo
+from invendx.storage import evidence_repo, vendor_repo
 from invendx.cli import _execute_score
 
 

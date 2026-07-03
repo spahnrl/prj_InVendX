@@ -1,35 +1,65 @@
 vendors:
-  - canonical_name: "Charles River"
-    primary_domain: "crd.com"
-    primary_segment: "Institutional / OEMS / IBOR"
-    aliases:
-      - "Charles River Development"
-      - "CRD"
-    seed_urls:
-      press:
-        - "https://www.crd.com/newsroom/"
-      careers:
-        - "https://www.crd.com/careers/"
-    github_org: null
-
-  - canonical_name: "InvestCloud"
-    primary_domain: "investcloud.com"
-    primary_segment: "Enterprise / RIA / digital wealth"
-    aliases: []
-    seed_urls: {}
-    github_org: null
-
-  - canonical_name: "Addepar"
-    primary_domain: "addepar.com"
-    primary_segment: "Reporting / aggregation"
-    aliases: []
-    seed_urls: {}
-    github_org: null
-
-  - canonical_name: "Orion Advisor Tech"
-    primary_domain: "orion.com"
-    primary_segment: "RIA / advisor tech"
-    aliases:
-      - "Orion"
-    seed_urls: {}
-    github_org: null
+- canonical_name: Charles River
+  primary_domain: crd.com
+  primary_segment: Institutional / OEMS / IBOR
+  aliases:
+  - Charles River Development
+  - CRD
+  seed_urls:
+    press:
+    - https://www.crd.com/newsroom/
+    careers:
+    - https://www.crd.com/careers/
+    solutions:
+    - https://www.crd.com/solutions/charles-river-ims/
+    - https://www.crd.com/solutions/charles-river-wealth-hub/
+    platform:
+    - https://www.crd.com/services/cloud
+    partners:
+    - https://www.crd.com/company/partners/
+    integrations:
+    - https://info.crd.com/Partners-Interfaces
+  github_org: null
+- canonical_name: InvestCloud
+  primary_domain: investcloud.com
+  primary_segment: Enterprise / RIA / digital wealth
+  aliases: []
+  seed_urls: {}
+  github_org: null
+- canonical_name: Addepar
+  primary_domain: addepar.com
+  primary_segment: Reporting / aggregation
+  aliases: []
+  seed_urls: {}
+  github_org: null
+- canonical_name: Orion Advisor Tech
+  primary_domain: orion.com
+  primary_segment: RIA / advisor tech
+  aliases:
+  - Orion
+  seed_urls: {}
+  github_org: null
+- canonical_name: SEI
+  primary_domain: seic.com
+  aliases: []
+  seed_urls:
+    corporate:
+    - https://www.seic.com/banks-wealth-managers/what-we-do/wealth-management-technology-and-operations
+    developer_portal:
+    - https://developers.seic.com/
+    - https://developers.seic.com/browse/quickstart
+    - https://developers.seic.com/browse/apis
+  primary_segment: ''
+  github_org: null
+- canonical_name: Envestnet
+  primary_domain: envestnet.com
+  aliases: []
+  seed_urls: {}
+  primary_segment: ''
+  github_org: null
+- canonical_name: Black Diamond
+  primary_domain: sscblackdiamond.com
+  aliases: []
+  seed_urls: {}
+  primary_segment: ''
+  github_org: null

@@ -117,9 +117,13 @@ Web UI, chatbot, relationship graph — future
 
 **Vendors (first-class):** stable `vendor_id`, canonical name, primary domain, aliases, seed URLs, primary segment, optional `github_org`.
 
-**Evidence (one row per item):** includes `vendor_id`, `source_type`, `source_url`, `source_date`, `evidence_type`, `product_area`, `entity_1` / `entity_2`, `claim_text`, `confidence`, `tags`, `score_impact_category`, `raw_text_excerpt`, `parser_version`, `run_id`.
+**Evidence (one row per item):** includes `vendor_id`, `source_type`, `source_url`, `source_date`, `evidence_type`, `product_area`, `entity_1` / `entity_2`, `claim_text`, `confidence`, `tags`, `score_impact_category`, `raw_text_excerpt`, `parser_version`, `run_id`, optional **`dedupe_hash`** (normalized fingerprint of vendor + type + URL + claim + tags).
 
-**Scores:** derived only; each line item references supporting **evidence IDs**.
+**Ingest dedupe:** On each `invendx run`, new rows get a `dedupe_hash`; rows whose fingerprint **already exists** for that vendor are **skipped** (counts in stdout include “skipped as duplicate fingerprint”). **Legacy rows** with NULL hashes are not matched until you run `python scripts/backfill_evidence_dedupe_hashes.py --db data/invendx.db` from the repo root (after `pip install -e .`).
+
+**Report “Recent evidence”:** Markdown reports show the **latest ingest run** first, **collapse** identical type/URL/claim lines as **×N**, and fall back to an all-runs collapsed view if the latest run stored no rows.
+
+**Scores:** derived only; each line item references supporting **evidence IDs**. Before rules run, evidence is **deduped by fingerprint** (or type/URL/claim if hash is missing) so citation lists are not crowded by repeats.
 
 ---
 
@@ -176,9 +180,10 @@ invendx export evidence --vendor "Charles River" --db data/invendx.db --out expo
 invendx export report --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export scorecard --vendor "Charles River" --db data/invendx.db --out exports/
 invendx export summaries --db data/invendx.db --out exports/
+invendx export coverage --db data/invendx.db --out exports/
 ```
 
-`--score` on `run` uses the same scoring path as `invendx score` (after ingest), including **`--all-evidence`**. `export scorecard` and the score section in `export report` always reflect the **most recent persisted score run** in the database (whatever scope was used on that last `score` / `run --score`). They do not re-score; re-run `invendx score` if you change ingest data or want a different scope. **`export evidence`** and the **Recent evidence** part of the report still list all stored rows for the vendor.
+`--score` on `run` uses the same scoring path as `invendx score` (after ingest), including **`--all-evidence`**. `export scorecard` and the score section in `export report` always reflect the **most recent persisted score run** in the database (whatever scope was used on that last `score` / `run --score`). They do not re-score; re-run `invendx score` if you change ingest data or want a different scope. **`export evidence`** and the **Recent evidence** part of the report still list all stored rows for the vendor. **`export coverage`** writes `vendor_coverage.csv` with per-vendor ingest/evidence/summary/score aggregates and a rule-based **`coverage_status`** (see Admin / Operator “Coverage diagnostics” in Streamlit).
 
 **GitHub API:** if you set `github_org` on a vendor, provide a GitHub **personal access token** as `GITHUB_TOKEN`. You can put it in a repo-root `.env` file (gitignored); the CLI loads it automatically via `python-dotenv`. Environment variables already set are not overwritten. The repository link at the top is not a token.
 

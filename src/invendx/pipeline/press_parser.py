@@ -26,6 +26,31 @@ def _excerpt(text: str, max_len: int = 600) -> str:
     return t[: max_len - 3] + "..."
 
 
+def title_looks_like_obvious_soft_error(title: str) -> bool:
+    """Strict title-only soft-error heuristic (shared with report fallback for legacy rows)."""
+    t = " ".join((title or "").lower().split())
+    if not t:
+        return False
+    if "404" in t:
+        return True
+    if "not found" in t:
+        return True
+    if "could not be found" in t:
+        return True
+    if "cannot be found" in t:
+        return True
+    if "can't be found" in t:
+        return True
+    return False
+
+
+def _is_obvious_soft_error_page(page: PageDocument, title: str) -> bool:
+    """True for hard HTTP errors or soft 404 / obvious error titles (title and status only)."""
+    if page.status_code >= 400:
+        return True
+    return title_looks_like_obvious_soft_error(title)
+
+
 def parse_pages_to_evidence(
     pages: list[PageDocument],
     vendor: VendorRecord,
@@ -37,8 +62,10 @@ def parse_pages_to_evidence(
         if not page.html:
             continue
         meta = extract_meta(page.html)
-        text = html_to_text(page.html)
         title = meta.get("title") or page.final_url
+        if _is_obvious_soft_error_page(page, title):
+            continue
+        text = html_to_text(page.html)
         source_date = parse_date_loose(meta.get("published_hint"))
 
         # Page-level capture
@@ -114,7 +141,7 @@ def parse_pages_to_evidence(
         soup = BeautifulSoup(page.html, "lxml")
         links = [a["href"] for a in soup.find_all("a", href=True)]
         abs_links = [urljoin(page.final_url, h) for h in links]
-        doc_hits = find_doc_hints_in_links(abs_links)
+        doc_hits = find_doc_hints_in_links(list(dict.fromkeys([page.final_url] + abs_links)))
         for hit in doc_hits[:5]:
             records.append(
                 EvidenceRecord(

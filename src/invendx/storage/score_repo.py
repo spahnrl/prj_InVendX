@@ -76,3 +76,21 @@ def list_line_items_for_run(conn: sqlite3.Connection, score_run_id: str) -> list
         (score_run_id,),
     )
     return [dict(r) for r in cur.fetchall()]
+
+
+def latest_score_category_totals(
+    conn: sqlite3.Connection, vendor_id: str
+) -> tuple[float, dict[str, float]] | None:
+    """Sum of points and per-category sums for the vendor's latest score run, or None if unscored."""
+    meta = get_latest_score_run(conn, vendor_id)
+    if not meta:
+        return None
+    items = list_line_items_for_run(conn, meta["score_run_id"])
+    by_cat: dict[str, float] = {}
+    total = 0.0
+    for it in items:
+        p = float(it["points"])
+        total += p
+        cat = str(it["category"])
+        by_cat[cat] = by_cat.get(cat, 0.0) + p
+    return total, by_cat

@@ -29,6 +29,9 @@ dev = [
 ui = [
   "streamlit>=1.30",
 ]
+browser = [
+  "playwright>=1.40",
+]
 
 [project.scripts]
 invendx = "invendx.cli:app"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
@@ -103,6 +103,30 @@ def init_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL,
             FOREIGN KEY (vendor_id) REFERENCES vendors(vendor_id)
         );
+
+        CREATE TABLE IF NOT EXISTS manual_intake_queue (
+            intake_id TEXT PRIMARY KEY,
+            vendor_id TEXT NOT NULL,
+            source_url TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            reason_flagged TEXT NOT NULL,
+            instructions_key TEXT NOT NULL,
+            status TEXT NOT NULL,
+            capture_method TEXT,
+            captured_text TEXT,
+            captured_at TEXT,
+            captured_by TEXT,
+            operator_notes TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT,
+            promoted_run_id TEXT,
+            promoted_evidence_ids_json TEXT,
+            FOREIGN KEY (vendor_id) REFERENCES vendors(vendor_id),
+            FOREIGN KEY (promoted_run_id) REFERENCES runs(run_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_manual_intake_vendor ON manual_intake_queue(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_manual_intake_status ON manual_intake_queue(status);
         """
     )
     cur.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

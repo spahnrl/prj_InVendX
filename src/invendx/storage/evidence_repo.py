@@ -85,6 +85,40 @@ def get_latest_run_id_for_vendor(conn: sqlite3.Connection, vendor_id: str) -> st
     return str(row[0]) if row else None
 
 
+def get_latest_run_row_for_vendor(conn: sqlite3.Connection, vendor_id: str) -> dict | None:
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT run_id, vendor_id, started_at, parser_version, notes FROM runs
+        WHERE vendor_id = ?
+        ORDER BY started_at DESC, run_id DESC
+        LIMIT 1
+        """,
+        (vendor_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def update_run_notes(conn: sqlite3.Connection, run_id: str, notes: str) -> None:
+    cur = conn.cursor()
+    cur.execute("UPDATE runs SET notes = ? WHERE run_id = ?", (notes, run_id))
+    conn.commit()
+
+
+def vendor_has_dedupe_hash(
+    conn: sqlite3.Connection, vendor_id: str, dedupe_hash: str | None
+) -> bool:
+    if not dedupe_hash:
+        return False
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT 1 FROM evidence WHERE vendor_id = ? AND dedupe_hash = ? LIMIT 1",
+        (vendor_id, dedupe_hash),
+    )
+    return cur.fetchone() is not None
+
+
 def list_evidence_for_vendor(
     conn: sqlite3.Connection, vendor_id: str, *, run_id: str | None = None
 ) -> list[EvidenceRecord]:

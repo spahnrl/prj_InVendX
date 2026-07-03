@@ -10,8 +10,6 @@ from pathlib import Path
 import typer
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from invendx import PARSER_VERSION
 from invendx.config_loader import load_score_rules, load_vendor_seeds
 from invendx.http.client import DEFAULT_UA, HttpClient
@@ -19,6 +17,15 @@ from invendx.http.robots import RobotsPolicy
 from invendx.logging_config import setup_logging
 from invendx.pipeline.github_collector import collect_github_org
 from invendx.pipeline.job_collector import collect_job_signals
+from invendx.pipeline.browser_capture import (
+    CAPTURE_METHOD_CHROME_FETCH,
+    BrowserCaptureError,
+    extract_visible_text,
+)
+from invendx.pipeline.manual_intake import (
+    discard_duplicate_active_intakes_by_url,
+    promote_intake_to_evidence,
+)
 from invendx.pipeline.press_parser import dev_docs_absence_evidence, parse_pages_to_evidence
 from invendx.pipeline.score_engine import evaluate_rules
 from invendx.pipeline.site_crawler import CrawlConfig, SiteCrawler
@@ -26,14 +33,23 @@ from invendx.pipeline.source_discovery import discover_vendor
 from invendx.pipeline.vendor_summary import refresh_vendor_summary
 from invendx.extract.patterns import load_keywords
 from invendx.pipeline.entity_normalizer import EntityNormalizer
+from invendx.pipeline.evidence_fingerprint import assign_dedupe_hashes
+from invendx.pipeline.evidence_views import (
+    dedupe_evidence_for_scoring,
+    suppress_developer_docs_absence_when_dev_portal_present,
+)
 from invendx.pipeline import report_builder
 from invendx.models.vendor import VendorRecord
 from invendx.storage.db import connect, init_schema
-from invendx.storage import evidence_repo, score_repo, vendor_repo
+from invendx.storage import evidence_repo, manual_intake_repo, score_repo, vendor_repo
+
+load_dotenv()
 
 app = typer.Typer(no_args_is_help=True)
 vendors_app = typer.Typer(no_args_is_help=True)
+manual_app = typer.Typer(no_args_is_help=True)
 app.add_typer(vendors_app, name="vendors")
+app.add_typer(manual_app, name="manual")
 
 
 def _execute_score(
@@ -58,11 +74,110 @@ def _execute_score(
             ev = []
         else:
             ev = evidence_repo.list_evidence_for_vendor(conn, vendor.vendor_id, run_id=rid)
+    ev = dedupe_evidence_for_scoring(ev)
+    ev = suppress_developer_docs_absence_when_dev_portal_present(ev)
     items = evaluate_rules(cfg, ev)
     score_run_id = score_repo.insert_score_run(
         conn, vendor.vendor_id, vendor.canonical_name, cfg.ruleset_version, items
     )
     return score_run_id, len(items), cfg.ruleset_version
+
+
+@manual_app.command("promote")
+def manual_promote(
+    intake_id: str = typer.Argument(..., help="manual_intake_queue.intake_id"),
+    db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
+) -> None:
+    """Promote one staged manual capture to the evidence table (no scoring)."""
+    setup_logging()
+    conn = connect(db)
+    init_schema(conn)
+    run_id, ev_ids, err = promote_intake_to_evidence(conn, intake_id)
+    if err:
+        typer.echo(err, err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Promoted {intake_id}: run {run_id} evidence {ev_ids}")
+
+
+@manual_app.command("fetch")
+def manual_fetch(
+    intake_id: str = typer.Argument(..., help="manual_intake_queue.intake_id"),
+    db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
+    headed: bool = typer.Option(False, "--headed", help="Show browser window (Chrome / Chromium)"),
+    connect_cdp: str | None = typer.Option(
+        None,
+        "--connect-cdp",
+        help="Attach to Chrome you started with remote debugging, e.g. http://127.0.0.1:9222 (ignores --headed)",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print extracted text; do not write DB"),
+    wait_until: str = typer.Option(
+        "domcontentloaded",
+        "--wait-until",
+        help="Playwright wait_until (e.g. domcontentloaded, load, networkidle)",
+    ),
+    timeout_ms: int = typer.Option(60_000, "--timeout-ms", help="Navigation timeout in ms"),
+) -> None:
+    """Fetch rendered page text for a queued URL via Playwright and save the capture (unless --dry-run)."""
+    setup_logging()
+    conn = connect(db)
+    init_schema(conn)
+    row = manual_intake_repo.get_intake(conn, intake_id)
+    if not row:
+        typer.echo(f"No intake row: {intake_id}", err=True)
+        raise typer.Exit(1)
+    st = row["status"]
+    if st == "discarded":
+        typer.echo("Intake row is discarded.", err=True)
+        raise typer.Exit(1)
+    if st == "ingested" and not dry_run:
+        typer.echo("Intake row already ingested; use --dry-run to fetch text only.", err=True)
+        raise typer.Exit(1)
+    url = row["source_url"]
+    if not (url or "").strip():
+        typer.echo("Intake row has no source_url.", err=True)
+        raise typer.Exit(1)
+    try:
+        text = extract_visible_text(
+            url,
+            headed=headed if not connect_cdp else False,
+            wait_until=wait_until,
+            timeout_ms=timeout_ms,
+            connect_cdp_url=connect_cdp,
+        )
+    except BrowserCaptureError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    if dry_run:
+        typer.echo(text)
+        return
+    saved = manual_intake_repo.save_capture(
+        conn,
+        intake_id,
+        captured_text=text,
+        captured_by=row.get("captured_by"),
+        capture_method=CAPTURE_METHOD_CHROME_FETCH,
+    )
+    if not saved:
+        typer.echo("Could not save capture (wrong status?).", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Saved capture for {intake_id} ({len(text)} characters).")
+
+
+@manual_app.command("dedupe")
+def manual_dedupe(
+    vendor: str = typer.Argument(..., help="Canonical vendor name"),
+    db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
+) -> None:
+    """Discard extra manual intake queue rows with the same URL (keep one pending/captured per link)."""
+    setup_logging()
+    conn = connect(db)
+    init_schema(conn)
+    v = vendor_repo.find_vendor_by_canonical_name(conn, vendor)
+    if not v:
+        typer.echo(f"Vendor not in DB: {vendor}. Run: invendx vendors sync", err=True)
+        raise typer.Exit(1)
+    n = discard_duplicate_active_intakes_by_url(conn, v.vendor_id)
+    typer.echo(f"Discarded {n} duplicate manual intake row(s) for {vendor}.")
 
 
 @vendors_app.command("sync")
@@ -145,6 +260,36 @@ def run(
         crawl_config = replace(crawl_config, delay_s=delay_s)
     crawler = SiteCrawler(http, robots, crawl_config)
     pages = crawler.crawl_from_targets(targets)
+    ct = crawler.last_telemetry
+    log.info(
+        "crawl telemetry: robots_denied=%s http_not_ok=%s non_html_skipped=%s "
+        "fetch_failed=%s pages_stored=%s",
+        ct.robots_denied,
+        ct.http_not_ok,
+        ct.non_html_skipped,
+        ct.fetch_failed,
+        ct.pages_stored,
+    )
+    typer.echo(
+        "Crawl telemetry: "
+        f"robots_denied={ct.robots_denied} "
+        f"http_not_ok={ct.http_not_ok} "
+        f"non_html_skipped={ct.non_html_skipped} "
+        f"fetch_failed={ct.fetch_failed} "
+        f"pages_stored={ct.pages_stored}"
+    )
+    notes_obj = {
+        "cli_run": True,
+        "crawl_telemetry": {
+            "robots_denied": ct.robots_denied,
+            "http_not_ok": ct.http_not_ok,
+            "non_html_skipped": ct.non_html_skipped,
+            "fetch_failed": ct.fetch_failed,
+            "pages_stored": ct.pages_stored,
+        },
+        "crawl_skipped_urls": ct.skipped_urls,
+    }
+    evidence_repo.update_run_notes(conn, run_id, json.dumps(notes_obj, ensure_ascii=False))
     records = parse_pages_to_evidence(pages, v, run_id, PARSER_VERSION)
 
     absence = dev_docs_absence_evidence(v, run_id, [p.final_url for p in pages], PARSER_VERSION)
@@ -158,10 +303,28 @@ def run(
 
     normalizer = EntityNormalizer.from_yaml(aliases)
     records = normalizer.normalize_evidence_entities(records)
+    records = assign_dedupe_hashes(records)
+    to_insert = []
+    skipped_dup = 0
+    pending_fp: set[str] = set()
+    for r in records:
+        h = r.dedupe_hash or ""
+        if h in pending_fp:
+            skipped_dup += 1
+            continue
+        if h and evidence_repo.vendor_has_dedupe_hash(conn, r.vendor_id, h):
+            skipped_dup += 1
+            continue
+        if h:
+            pending_fp.add(h)
+        to_insert.append(r)
 
-    evidence_repo.insert_evidence(conn, records)
+    evidence_repo.insert_evidence(conn, to_insert)
     refresh_vendor_summary(conn, v.vendor_id)
-    typer.echo(f"Run {run_id}: stored {len(records)} evidence rows for {vendor}")
+    typer.echo(
+        f"Run {run_id}: stored {len(to_insert)} evidence rows for {vendor}"
+        + (f" ({skipped_dup} skipped as duplicate fingerprint)" if skipped_dup else "")
+    )
     if score:
         score_run_id, n_items, rver = _execute_score(
             conn,
@@ -195,9 +358,28 @@ def score(
     typer.echo(f"Scored {vendor}: {n_items} line items ({rver}) (run {score_run_id})")
 
 
+@app.command("summaries-refresh")
+def summaries_refresh(
+    db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
+) -> None:
+    """Recompute vendor_summaries (counts and profile hint patterns) from stored evidence.
+
+    Use after upgrading hint extraction so the UI shows new RIA/AUM fields without re-crawling.
+    """
+    setup_logging()
+    conn = connect(db)
+    init_schema(conn)
+    vendors = vendor_repo.list_vendors(conn)
+    for v in vendors:
+        refresh_vendor_summary(conn, v.vendor_id)
+    typer.echo(f"Refreshed {len(vendors)} vendor summary row(s).")
+
+
 @app.command("export")
 def export_cmd(
-    what: str = typer.Argument(..., help="evidence | report | scorecard | summaries"),
+    what: str = typer.Argument(
+        ..., help="evidence | report | scorecard | summaries | coverage"
+    ),
     vendor: str | None = typer.Option(None, "--vendor", "-v"),
     db: Path = typer.Option(Path("data/invendx.db"), "--db", "-d"),
     out: Path = typer.Option(Path("exports"), "--out", "-o"),
@@ -207,6 +389,10 @@ def export_cmd(
     init_schema(conn)
     if what == "summaries":
         path = report_builder.export_summaries_json(conn, out / "vendor_summaries.json")
+        typer.echo(str(path))
+        return
+    if what == "coverage":
+        path = report_builder.export_coverage_csv(conn, out / "vendor_coverage.csv")
         typer.echo(str(path))
         return
     if not vendor:
@@ -223,7 +409,7 @@ def export_cmd(
     elif what == "scorecard":
         path = report_builder.export_scorecard_csv(conn, v.vendor_id, out / f"{vendor}_scorecard.csv")
     else:
-        typer.echo("what must be evidence, report, scorecard, or summaries", err=True)
+        typer.echo("what must be evidence, report, scorecard, summaries, or coverage", err=True)
         raise typer.Exit(1)
     typer.echo(str(path))
 

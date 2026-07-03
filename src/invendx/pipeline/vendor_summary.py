@@ -41,7 +41,11 @@ def refresh_vendor_summary(conn: sqlite3.Connection, vendor_id: str) -> None:
     for _conf, claim, excerpt in rows:
         blob = f"{claim or ''}\n{excerpt or ''}"
         for k, v in extract_profile_metrics(blob).items():
-            profile.setdefault(k, v)
+            if k == "ria_hint" and isinstance(v, int):
+                prev = profile.get("ria_hint")
+                profile["ria_hint"] = v if not isinstance(prev, int) else max(prev, v)
+            else:
+                profile.setdefault(k, v)
 
     vendor_summary_repo.upsert_summary(
         conn,

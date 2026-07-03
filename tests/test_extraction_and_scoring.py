@@ -31,15 +31,35 @@ def _vendor() -> VendorRecord:
     )
 
 
-def _page(html: str, url: str = "https://vendor.example/news") -> PageDocument:
+def _page(
+    html: str,
+    url: str = "https://vendor.example/news",
+    *,
+    status_code: int = 200,
+) -> PageDocument:
     return PageDocument(
         url=url,
         final_url=url,
-        status_code=200,
+        status_code=status_code,
         content_type="text/html",
         html=html,
         fetched_at="2026-01-01T12:00:00+00:00",
     )
+
+
+def test_parse_pages_skips_soft_error_title() -> None:
+    html = (
+        "<html><head><title>404 — Page not found | Vendor</title></head>"
+        "<body><h1>Oops</h1></body></html>"
+    )
+    recs = parse_pages_to_evidence([_page(html)], _vendor(), "run-1", "0.1.0")
+    assert recs == []
+
+
+def test_parse_pages_skips_hard_http_error_status() -> None:
+    html = "<html><head><title>OK Title</title></head><body>x</body></html>"
+    recs = parse_pages_to_evidence([_page(html, status_code=404)], _vendor(), "run-1", "0.1.0")
+    assert recs == []
 
 
 def test_parse_pages_keyword_signal_tags_from_body() -> None:
@@ -62,6 +82,15 @@ def test_parse_pages_integration_when_partnership_language() -> None:
     assert "integration" in kinds
     integ = next(r for r in recs if r.evidence_type == "integration")
     assert "integration" in integ.tags
+
+
+def test_parse_pages_dev_portal_signal_from_final_url_without_matching_links() -> None:
+    html = "<html><head><title>Catalog</title></head><body><p>No doc links here.</p></body></html>"
+    url = "https://vendor.example/browse/apis"
+    recs = parse_pages_to_evidence([_page(html, url=url)], _vendor(), "run-1", "0.1.0")
+    dev = [r for r in recs if r.evidence_type == "dev_portal_signal"]
+    assert len(dev) >= 1
+    assert any(url in r.claim_text for r in dev)
 
 
 def test_parse_pages_dev_portal_signal_from_docs_href() -> None:
